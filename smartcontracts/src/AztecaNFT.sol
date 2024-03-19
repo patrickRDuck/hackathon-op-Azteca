@@ -2,8 +2,9 @@
 pragma solidity ^0.8.18;
 
 import "../node_modules/@openzeppelin/contracts/token/ERC721/ERC721.sol";
+import "../node_modules/@openzeppelin/contracts/access/Ownable.sol";
 
-contract AztecaNFT is ERC721 {
+contract AztecaNFT is ERC721, Ownable {
     using Strings for uint256;
     uint256 tokensId;
     uint256 maxSupply = 2; //ESTA ENTIDADE DEFINE O MÁXIMO DE TOKENS QUE PODEM EXISTIR NESSE CONTRATO
@@ -12,10 +13,15 @@ contract AztecaNFT is ERC721 {
 
     mapping(uint256 _tokenId => string _tokeURI) private _tokensURI;
 
-    constructor() ERC721("Azteca", "AZT") {
+    error MaxSupplyExcessed(uint256 _quantity);
+    error ValueNotEnough(uint256 _value);
+    error FailedTransfer();
+
+    event WithDrawn(address _owner, uint256 _balance);
+
+    constructor() ERC721("Azteca", "AZT") Ownable( 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266) {
     }
 
-    //ESTE CONTRATO DE EXEMPLO NÃO TEVE A CRIAÇÃO DO WITHDRAW, ESTA É UMA FUNÇÃO QUE TRANSFERE O DINHEIRO DA COMPRA DAS NFT PARA UMA CARTEIRA
 
     //ESTA FUNÇÃO FOI CRIADA POR NÓS PARA FAZER UMA RELAÇÃO COM O TOKEN E A URI
     function _setTokenURI(uint256 _tokenId) internal {
@@ -26,8 +32,14 @@ contract AztecaNFT is ERC721 {
     //ESTA FUNÇÃO IRÁ TRATAR A FORMAÇÃO DE UM NFT, APÓS TRATAR OS DADOS ELA IRÁ CHAMA A _SAFEMINT DA BIBLIOTECA A QUAL É UMA FUNÇÃO PRIVA, OU SEJA É NECESSÁRIO A CONSTRUÇÃO DE UMA FUNÇÃO PÚBLICA EM ALGUM MOMENTO PARA QUE POSSA SER CHAMADO DE FORMA EXTERNA A CRIAÇÃO DE NOVOS NFT
     //APESAR DA FUNÇÃO UTILIZAR UMA ESTRUTURA DE LOOPING ELA NÃO É RECOMENDADA POIS CONSOME MUITA GAS
     function makeMint(address _to, uint256 _amount) public payable {
+        if(totalSupply() + _amount > maxSupply) {
+            revert MaxSupplyExcessed(_amount);
+        }
+
         uint256 calcValue = price * _amount;
-        require(msg.value == calcValue, "CHN: Value is not enough");
+        if(calcValue > msg.value){
+            revert ValueNotEnough(msg.value);
+        }
 
         for(uint256 i = 0; i < _amount; i++) {
             tokensId += 1;
@@ -42,12 +54,12 @@ contract AztecaNFT is ERC721 {
     }
 
     //ESSA FUNÇÃO É OVERRIDE, ISSO QUER DIZER QUE SOBRESCREVE A JÁ EXISTENTE IMPORTADA NA OPENZEPPIL, POIS A URI É ALGO INDIVIDUAL DA APLICAÇÃO, NA FUNÇÃO ORIGINAL ERA RETORNADO NADA.
-    function _baseURI() internal view virtual override returns(string memory) {
+    function _baseURI() internal view override returns(string memory) {
         return baseUri;
     }
 
     //ESTA FUNÇÃO RETORNA UMA URI A QUAL É RESULTADO DA JUNÇÃO DA BASEURI, O ID DO TOKE E A EXTENSÃO .JSON 
-    function tokenURI(uint256 _tokenId) private view virtual override returns(string memory) {
+    function tokenURI(uint256 _tokenId) public view override returns(string memory) {
         string memory currentBaseURI = _baseURI();
         return
             bytes(currentBaseURI).length > 0
@@ -70,6 +82,16 @@ contract AztecaNFT is ERC721 {
     //ESTA FUNÇÃO ASSUME O PAPEL DE RETORNAR A QUANTIDADE DE TOKENS ATIVOS, É RETORNADO O ID POIS ELE SEGUE A CONTAGEM DE TOKENS EXISTENTES
     function totalSupply() public view returns(uint256) {
         return tokensId; 
+    }
+
+    //ESTA FUNÇÃO PASSA AS CRIPTOS RECEBIDAS NO CONTRATO PARA OUTRA CARTEIRA, A FUNÇÃO SO PODE SER CHAMADA PELO DONO, QUEM IRÁ FAZER ESSA VERIFICAÇÃO É O ONLYOWNER. O PRIMEIRO DONO É AQUELE QUE FAZ O DEPLOY DO CONTRATO, POSTERIORMENTE É POSSÍVEL TRANSFERIRI A TITULARIDADE DO CONTRATO
+    function withDraw() external onlyOwner {
+        uint256 _balance = address(this).balance;
+        (bool success,) = msg.sender.call{value: _balance}("");
+        if(!success) {
+            revert FailedTransfer();
+        }
+        emit WithDrawn(msg.sender, _balance);
     }
 }
 

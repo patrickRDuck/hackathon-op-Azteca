@@ -21,7 +21,7 @@ class Contract:
 
 
 CHAIN_ID = 31337
-CONTRACT_SCRIPT_NAME = "Deploy.local.s.sol"
+CONTRACT_SCRIPT_NAME = "deploy.local.s.sol"
 TRANSACTIONS_PATH = f"broadcast/{CONTRACT_SCRIPT_NAME}/{CHAIN_ID}/run-latest.json"
 TARGET_DIR = "../frontend/generated/deployedContracts.ts"
 

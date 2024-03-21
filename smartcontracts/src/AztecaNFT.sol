@@ -1,35 +1,54 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.18;
-
 import "../node_modules/@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "../node_modules/@openzeppelin/contracts/access/Ownable.sol";
-
 contract AztecaNFT is ERC721, Ownable {
     using Strings for uint256;
+    
     uint256 tokensId;
-    uint256 maxSupply = 2; //ESTA ENTIDADE DEFINE O MÁXIMO DE TOKENS QUE PODEM EXISTIR NESSE CONTRATO
+    uint256 maxSupply = 2;
     uint256 price = 0.07 ether;
     string internal baseUri = "https://harlequin-famous-heron-61.mypinata.cloud/ipfs/QmXPazcSy69GV2G1XKi88bwUP33YenmvQsQgpsYw3whXLa/";
-
+   
     mapping(uint256 _tokenId => string _tokeURI) private _tokensURI;
+    mapping(uint256 _tokenId => uint256 _value) public NftsForSale; 
 
     error MaxSupplyExcessed(uint256 _quantity);
     error ValueNotEnough(uint256 _value);
     error FailedTransfer();
-
+    error NftDoesntExist(uint256 _tokenId);
+    error IncorrectNftOwner();
+    error ValueBellowTheAllowed(string _menssage);
+    error NftNotForSale();
+    
     event WithDrawn(address _owner, uint256 _balance);
-
+    event NftPutUpForSale(address _owner, uint256 _value);
+    event NftPurchased(address _oldOwner, address _newOwner, uint256 _value);
+    
     constructor() ERC721("Azteca", "AZT") Ownable( 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266) {
     }
-
-
-    //ESTA FUNÇÃO FOI CRIADA POR NÓS PARA FAZER UMA RELAÇÃO COM O TOKEN E A URI
+    
     function _setTokenURI(uint256 _tokenId) internal {
         require(_owners[_tokenId] != address(0), "TOKEN DOES NOT EXIST");
         _tokensURI[_tokenId] = tokenURI(_tokenId);
     }
 
-    //ESTA FUNÇÃO IRÁ TRATAR A FORMAÇÃO DE UM NFT, APÓS TRATAR OS DADOS ELA IRÁ CHAMA A _SAFEMINT DA BIBLIOTECA A QUAL É UMA FUNÇÃO PRIVA, OU SEJA É NECESSÁRIO A CONSTRUÇÃO DE UMA FUNÇÃO PÚBLICA EM ALGUM MOMENTO PARA QUE POSSA SER CHAMADO DE FORMA EXTERNA A CRIAÇÃO DE NOVOS NFT
+    function _baseURI() internal view override returns(string memory) {
+        return baseUri;
+    }
+
+    function verifyNftExist(uint256 _tokenId) internal view {
+        if(_owners[_tokenId] == address(0)) {
+            revert  NftDoesntExist(_tokenId);
+        } 
+    }
+
+    function verifyNftOwner(uint256 _tokenId, address _from) private view {
+        if(_owners[_tokenId] != _from) {
+            revert IncorrectNftOwner();
+        }
+    }   
+
     //APESAR DA FUNÇÃO UTILIZAR UMA ESTRUTURA DE LOOPING ELA NÃO É RECOMENDADA POIS CONSOME MUITA GAS
     function makeMint(address _to, uint256 _amount) public payable {
         if(totalSupply() + _amount > maxSupply) {
@@ -38,7 +57,7 @@ contract AztecaNFT is ERC721, Ownable {
 
         uint256 calcValue = price * _amount;
         if(calcValue > msg.value){
-            revert ValueNotEnough(msg.value);
+            revert ValueNotEnough(calcValue);
         }
 
         for(uint256 i = 0; i < _amount; i++) {
@@ -48,16 +67,48 @@ contract AztecaNFT is ERC721, Ownable {
         }
     }
 
+    function putNftForSale(uint256 _tokenId, uint256 _value) public {
+        verifyNftExist(_tokenId);
+        verifyNftOwner(_tokenId, msg.sender);
+
+        if(_value <= 0) {
+            revert  ValueBellowTheAllowed("The sales value must be greater than 0");
+        }
+
+        NftsForSale[_tokenId] = _value;
+
+        emit NftPutUpForSale(msg.sender, _value);
+    }
+
+    function buyNft(uint256 _tokenId) public payable {
+        uint256 memory purchasePrice = NftsForSale[_tokenId];
+        address memory ownerBeforeSale = _owners[_tokenId];
+
+        if(purchasePrice == 0) {
+            revert NftNotForSale();
+        }
+
+        if(purchasePrice > msg.value) {
+            revert ValueNotEnough(purchasePrice);
+        }
+
+        (bool success,) = ownerBeforeSale.call{value: msg.value}("");
+        if(!success) {
+            revert FailedTransfer();
+        }
+
+        _owners[_tokenId] = msg.sender;
+
+        delete NftsForSale[_tokenId];
+
+        emit NftPurchased(ownerBeforeSale, msg.sender, purchasePrice);
+    }
+
     //FUNÇÃO CRIADA POR NOS PARA FORNECER A URI VINCULADA A AQUELE TOKEN
     function getTokenURI(uint256 _tokenId) public view returns(string memory) {
         return _tokensURI[_tokenId];
     }
-
-    //ESSA FUNÇÃO É OVERRIDE, ISSO QUER DIZER QUE SOBRESCREVE A JÁ EXISTENTE IMPORTADA NA OPENZEPPIL, POIS A URI É ALGO INDIVIDUAL DA APLICAÇÃO, NA FUNÇÃO ORIGINAL ERA RETORNADO NADA.
-    function _baseURI() internal view override returns(string memory) {
-        return baseUri;
-    }
-
+    
     //ESTA FUNÇÃO RETORNA UMA URI A QUAL É RESULTADO DA JUNÇÃO DA BASEURI, O ID DO TOKE E A EXTENSÃO .JSON 
     function tokenURI(uint256 _tokenId) public view override returns(string memory) {
         string memory currentBaseURI = _baseURI();
@@ -162,3 +213,4 @@ contract AztecaNFT is ERC721, Ownable {
 // Approval(owner, approved, tokenId)
 
 // ApprovalForAll(owner, operator, approved)
+
